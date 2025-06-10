@@ -26,6 +26,13 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
+	if existingShort, exists := reverseStore[req.URL]; exists {
+		resp := map[string]string{"short_url": "http://localhost:8080/" + existingShort}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
 	if req.Custom != "" {
 		if _, exists := urlStore[req.Custom]; exists {
 			http.Error(w, "Custom short code already exists", http.StatusConflict)
@@ -36,9 +43,8 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		short = generateShortKey()
 	}
 
-	mutex.Lock()
 	urlStore[short] = req.URL
-	mutex.Unlock()
+	reverseStore[req.URL] = short
 
 	resp := map[string]string{"short_url": "http://localhost:8080/" + short}
 	w.Header().Set("Content-Type", "application/json")
