@@ -12,7 +12,8 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		URL string `json:"url"`
+		URL    string `json:"url"`
+		Custom string `json:"custom"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -20,7 +21,20 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	short := generateShortKey()
+	short := ""
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if req.Custom != "" {
+		if _, exists := urlStore[req.Custom]; exists {
+			http.Error(w, "Custom short code already exists", http.StatusConflict)
+			return
+		}
+		short = req.Custom
+	} else {
+		short = generateShortKey()
+	}
 
 	mutex.Lock()
 	urlStore[short] = req.URL
