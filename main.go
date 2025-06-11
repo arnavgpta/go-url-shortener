@@ -6,6 +6,8 @@ import (
 )
 
 func main() {
+	initMongo()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/shorten", shortenHandler)
 	mux.HandleFunc("/", redirectHandler)
