@@ -1,4 +1,4 @@
-# Go URL Shortener 🚀
+# Go URL Shortener 
 
 A lightweight and scalable URL shortener built with Go and MongoDB.
 
