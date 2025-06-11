@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 func shortenHandler(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +44,10 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		short = generateShortKey()
 	}
 
-	urlStore[short] = req.URL
+	urlStore[short] = urlData{
+		LongURL:   req.URL,
+		ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
 	reverseStore[req.URL] = short
 
 	resp := map[string]string{"short_url": "http://localhost:8080/" + short}
@@ -55,13 +59,13 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	short := r.URL.Path[1:]
 
 	mutex.Lock()
-	longURL, ok := urlStore[short]
+	data, ok := urlStore[short]
 	mutex.Unlock()
 
-	if !ok {
-		http.Error(w, "URL not found", http.StatusNotFound)
+	if !ok || time.Now().After(data.ExpiresAt) {
+		http.Error(w, "URL not found or expired", http.StatusNotFound)
 		return
 	}
 
-	http.Redirect(w, r, longURL, http.StatusFound)
+	http.Redirect(w, r, data.LongURL, http.StatusFound)
 }
