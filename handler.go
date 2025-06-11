@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func shortenHandler(w http.ResponseWriter, r *http.Request) {
@@ -22,20 +26,23 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	short := ""
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	if existingShort, exists := reverseStore[req.URL]; exists {
-		resp := map[string]string{"short_url": "http://localhost:8080/" + existingShort}
+	var existing URLMapping
+	err := urlCollection.FindOne(ctx, bson.M{"long_url": req.URL}).Decode(&existing)
+	if err == nil {
+		resp := map[string]string{"short_url": "http://localhost:8080/" + existing.ShortCode}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
 
+	short := ""
 	if req.Custom != "" {
-		if _, exists := urlStore[req.Custom]; exists {
+
+		count, _ := urlCollection.CountDocuments(ctx, bson.M{"short_code": req.Custom})
+		if count > 0 {
 			http.Error(w, "Custom short code already exists", http.StatusConflict)
 			return
 		}
@@ -44,11 +51,19 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		short = generateShortKey()
 	}
 
-	urlStore[short] = urlData{
+	entry := URLMapping{
+		ShortCode: short,
 		LongURL:   req.URL,
-		ExpiresAt: time.Now().Add(1 * time.Hour),
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
-	reverseStore[req.URL] = short
+
+	_, err = urlCollection.InsertOne(ctx, entry)
+	if err != nil {
+		log.Println("MongoDB insert error:", err)
+		http.Error(w, "Failed to save URL", http.StatusInternalServerError)
+		return
+	}
 
 	resp := map[string]string{"short_url": "http://localhost:8080/" + short}
 	w.Header().Set("Content-Type", "application/json")
@@ -58,14 +73,20 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	short := r.URL.Path[1:]
 
-	mutex.Lock()
-	data, ok := urlStore[short]
-	mutex.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	if !ok || time.Now().After(data.ExpiresAt) {
+	var result URLMapping
+	err := urlCollection.FindOne(ctx, bson.M{"short_code": short}).Decode(&result)
+	if err != nil {
 		http.Error(w, "URL not found or expired", http.StatusNotFound)
 		return
 	}
 
-	http.Redirect(w, r, data.LongURL, http.StatusFound)
+	if result.ExpiresAt.Before(time.Now()) {
+		http.Error(w, "URL has expired", http.StatusGone)
+		return
+	}
+
+	http.Redirect(w, r, result.LongURL, http.StatusFound)
 }

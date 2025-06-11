@@ -25,6 +25,6 @@ func initMongo() {
 		log.Fatal("Mongo connect error:", err)
 	}
 
-	urlCollection = client.Database("urlshortener").Collection("urls")
+	urlCollection = client.Database("urlShortener").Collection("urls")
 	log.Println("✅ Connected to MongoDB")
 }
